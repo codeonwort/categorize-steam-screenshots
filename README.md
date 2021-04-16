@@ -10,5 +10,5 @@ Categorize steam uncompressed screenshots into subdirectories per game title
 # How to run
 ```
 g++ main.cc -o main -std=c++17
-./main <jpg_dir> <png_dir>
+./main <steam_png_dir>
 ```
