@@ -5,8 +5,6 @@
 // and each game has it's own screenshot folder. But there uncompressed companions are
 // just saved in a single folder and they all get mixed.
 // 
-// ~This program compares .jpg and .png screenshot files
-// to categorize .png files into their own subdirectories.~
 // This program categorizes .png files into their own subdirectories.
 //
 
@@ -22,6 +20,13 @@ using namespace std;
 #include <dirent.h> // popen, opendir, readdir, ...
 
 const char* DUMP_APP_TITLE = "dumpapptitle.txt";
+
+struct PngFileInfo
+{
+    string appId;
+    string filepath; // full path
+    string filename; // including extension
+};
 
 // #todo: Is there standard API for popen()?
 bool exec(const char* cmd, string& outResult)
@@ -92,110 +97,10 @@ bool getTitleFromId(const char* appId, string& outResult)
     return false;
 }
 
-// #todo: Replace with std::filesystem
-void collectAppIdList(const char* jpgDir, vector<string>& outIdList)
-{
-    outIdList.clear();
-
-    DIR* jpgDirIter = opendir(jpgDir);
-    if (jpgDirIter == nullptr)
-    {
-        puts("error: opendir failed");
-    }
-    while (jpgDirIter != nullptr)
-    {
-        dirent* entry = readdir(jpgDirIter);
-        if (entry != nullptr)
-        {
-            if (entry->d_name[0] != '.')
-            {
-                string str = entry->d_name;
-                outIdList.emplace_back(str);
-            }
-        }
-        else
-        {
-            break;
-        }
-    }
-    closedir(jpgDirIter);
-}
-
-void categorizePngFiles(const char* jpgBaseDir, const char* appId, const char* pngBaseDir)
-{
-    char jpgDir[1024];
-    snprintf(jpgDir, sizeof(jpgDir), "%s/%s/screenshots/", jpgBaseDir, appId);
-
-    string appTitle;
-    if (getTitleFromId(appId, appTitle) == false)
-    {
-        printf("Failed to get the appTitle from appId: %s\n", appId);
-        return;
-    }
-
-    printf("Processing appId=%s (%s)\n", appId, appTitle.c_str());
-
-    char pngTargetDirBuffer[1024];
-    snprintf(pngTargetDirBuffer, sizeof(pngTargetDirBuffer), "%s/%s/", pngBaseDir, appTitle.c_str());
-    filesystem::create_directories(filesystem::path(pngTargetDirBuffer));
-
-    for(auto& p : filesystem::directory_iterator(jpgDir))
-    {
-        if (p.is_regular_file() == false)
-        {
-            continue;
-        }
-        std::string ext = p.path().extension().string();
-        if (ext != ".jpg")
-        {
-            continue;
-        }
-        std::string jpgName = p.path().stem().string();
-
-        char pngSourceBuffer[1024];
-        snprintf(pngSourceBuffer, sizeof(pngSourceBuffer), "%s/%s_%s.png", pngBaseDir, appId, jpgName.c_str());
-        filesystem::path pngSource(pngSourceBuffer);
-
-        if (filesystem::exists(pngSource) == false)
-        {
-            // #todo: Log if a companion png does not exist
-            continue;
-        }
-
-        char pngTargetBuffer[1024];
-        snprintf(pngTargetBuffer, sizeof(pngTargetBuffer), "%s/%s/%s_%s.png", pngBaseDir, appTitle.c_str(), appId, jpgName.c_str());
-            
-        filesystem::path pngTarget(pngTargetBuffer);
-        //filesystem::copy_file(pngSource, pngTarget);
-        // #todo: What if the target png is already there?
-        filesystem::rename(pngSource, pngTarget);
-    }
-}
-
-void printHelp()
-{
-    puts("Usage: <program_name> <steam_uncompressed_images_directory>");
-#if 0
-    puts("Usage: <program_name> %1 %2\n"
-         "Example:\n"
-         "  %1 : /mnt/c/Program Files (x86)/Steam/userdata/<number1>/<number2>/remote/\n"
-         "  %2 : /mnt/f/SteamPngScreenshots/\n"
-         "To identity <number1> and <number2>, open your steam client and go to "
-         "Steam -> View -> Screenshots -> Screenshot Uploader then click 'Show on Disk'.");
-#endif
-}
-
 bool isInteger(string s)
 {
     return !s.empty() && s.find_first_not_of("0123456789") == string::npos;
 }
-
-struct PngFileInfo
-{
-    string appId;
-    string filepath; // full path
-    string filename; // including extension
-};
 
 void collectPngFilesRecursively(const char* pngDir, vector<PngFileInfo>& infoArray)
 {
@@ -291,6 +196,11 @@ void writeDumpAppTitle(const char* pngDir, const map<string, string>& mapping)
     fs.close();
 }
 
+void printHelp()
+{
+    puts("Usage: <program_name> <steam_uncompressed_images_directory>");
+}
+
 int main(int argc, char* argv[])
 {
     if (argc < 2)
@@ -302,7 +212,7 @@ int main(int argc, char* argv[])
     const char* pngDir = argv[1];
 
     puts("> Collect steam uncompressed images...");
-
+   
     vector<PngFileInfo> pngInfoArray;
     collectPngFilesRecursively(pngDir, pngInfoArray);
     printf("%d files are found\n", (int)pngInfoArray.size());
@@ -314,6 +224,7 @@ int main(int argc, char* argv[])
 
     puts("> Resolve app IDs into app titles...");
 
+    // Get titles from IDs
     for (size_t i = 0; i < pngInfoArray.size(); ++i)
     {
         const string& appId = pngInfoArray[i].appId;
@@ -333,6 +244,7 @@ int main(int argc, char* argv[])
 
     puts("> Categorize...");
 
+    // Categorize files
     for (size_t i = 0; i < pngInfoArray.size(); ++i)
     {
         const string& appId = pngInfoArray[i].appId;
@@ -350,14 +262,14 @@ int main(int argc, char* argv[])
         snprintf(targetBuffer, sizeof(targetBuffer), "%s/%s/%s", pngDir, title.c_str(), filename.c_str());
         filesystem::path targetPath(targetBuffer);
 
-        // Create subdirectories first
-        char pngTargetDirBuffer[1024];
-        snprintf(pngTargetDirBuffer, sizeof(pngTargetDirBuffer), "%s/%s/", pngDir, title.c_str());
-        filesystem::create_directories(filesystem::path(pngTargetDirBuffer));
-
-        // Then move
         if (sourcePath != targetPath)
         {
+            // Create subdirectories first
+            char pngTargetDirBuffer[1024];
+            snprintf(pngTargetDirBuffer, sizeof(pngTargetDirBuffer), "%s/%s/", pngDir, title.c_str());
+            filesystem::create_directories(filesystem::path(pngTargetDirBuffer));
+
+            // Then move
             filesystem::rename(sourcePath, targetPath);
         }
     }
@@ -366,35 +278,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-
-#if 0 // Old impl. relying on jpg files
-int main(int argc, char* argv[])
-{
-    if (argc < 3)
-    {
-        printHelp();
-        return 1;
-    }
-
-    const char* jpgDir = argv[1];
-    const char* pngDir = argv[2];
-
-    vector<string> appIdList;
-    collectAppIdList(jpgDir, appIdList);
-
-    printf("appid count: %d\n", (int)appIdList.size());
-
-    for (size_t i = 0; i < appIdList.size(); ++i)
-    {
-        const std::string& appId = appIdList[i];
-        categorizePngFiles(jpgDir, appId.c_str(), pngDir);
-
-        printf("Progress: (%d/%d)\n", (int)i + 1, (int)appIdList.size());
-    }
-
-    puts("DONE.");
-
-    return 0;
-}
-#endif
 
