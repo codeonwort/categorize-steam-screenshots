@@ -13,6 +13,7 @@
 #include <vector>
 #include <regex>
 #include <map>
+#include <set>
 #include <fstream>
 #include <filesystem>
 using namespace std;
@@ -225,17 +226,24 @@ int main(int argc, char* argv[])
     puts("> Resolve app IDs into app titles...");
 
     // Get titles from IDs
+    set<string> alreadySearched;
     for (size_t i = 0; i < pngInfoArray.size(); ++i)
     {
         const string& appId = pngInfoArray[i].appId;
         if (idToTitleMap.find(appId) == idToTitleMap.end())
         {
+            if (alreadySearched.find(appId) != alreadySearched.end())
+            {
+                continue;
+            }
+
             string title;
             if (getTitleFromId(appId.c_str(), title))
             {
                 idToTitleMap[appId] = title;
                 printf("%s : %s\n", appId.c_str(), title.c_str());
             }
+            alreadySearched.insert(appId);
         }
     }
 
